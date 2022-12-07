@@ -1,0 +1,3 @@
+```
+cat input | cargo run
+```
