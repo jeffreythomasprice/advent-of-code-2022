@@ -4,8 +4,6 @@ use std::{
     io::{self, BufRead, BufReader},
 };
 
-use rand::seq::{IteratorRandom, SliceRandom};
-
 #[derive(Debug, Clone)]
 struct Entry {
     name: String,
@@ -91,37 +89,28 @@ impl Map {
             Ok(0)
         } else {
             let mut current = first.clone();
-            println!("starting at {}", current);
             let mut total = 0;
             let mut rate = 0;
             let mut time_remaining = 30;
             for next in route.iter() {
-                println!("moving to {}", next);
                 let distance = self
                     .distance_between(&current, next)?
                     .ok_or(format!("can't move from {} to {}", current, next))?;
                 let time_taken = distance + 1;
                 if time_taken > time_remaining {
-                    println!("out of time, can't move here");
                     break;
                 }
                 time_remaining -= time_taken;
-                println!("time remaining = {}", time_remaining);
                 total += rate * time_taken;
-                println!("new total = {}", total);
                 rate += self
                     .entries
                     .iter()
                     .find(|e| e.name == *next)
                     .ok_or(format!("no such entity: {}", next))?
                     .rate;
-                println!("new rate = {}", rate);
                 current = next.clone();
-                println!("new position = {}", current);
             }
-            println!("time remaining = {}", time_remaining);
             total += rate * time_remaining;
-            println!("final total = {}", total);
             Ok(total)
         }
     }
@@ -178,42 +167,44 @@ fn do_it(r: &mut impl std::io::Read) -> Result<usize, Box<dyn Error>> {
         .map(|e| e.name.clone())
         .collect::<HashSet<_>>();
     println!("these are the valid nodes: {:?}", valid_locations);
+    println!("");
 
-    let mut rng = rand::thread_rng();
+    let first = "AA".to_string();
 
-    let mut current_solution = Box::new(
-        valid_locations
-            .iter()
-            .map(|s| s.clone())
-            .collect::<Vec<_>>(),
-    );
-    current_solution.shuffle(&mut rng);
-    println!("potential solution = {:?}", current_solution);
-    let start = "AA".to_string();
-    let mut current_total = map.value_for_route(start.clone(), &current_solution)?;
+    let solution_path = {
+        let mut valid_locations = valid_locations.clone();
+        let mut current_location = first.clone();
+        let mut path = Vec::new();
+        while !valid_locations.is_empty() {
+            println!("current = {}", current_location);
 
-    for i in 0..(current_solution.len().pow(2)) {
-        println!("permutation {}", i);
-        let picks = (0..current_solution.len()).choose_multiple(&mut rng, 2);
-        let mut new_solution = current_solution.clone();
-        new_solution[picks[0]] = current_solution[picks[1]].clone();
-        new_solution[picks[1]] = current_solution[picks[0]].clone();
-        println!("new solution = {:?}", new_solution);
-        let new_total = map.value_for_route(start.clone(), &new_solution)?;
-        if new_total > current_total {
-            println!("keeping new, {} > {}", new_total, current_total);
-            current_solution = new_solution;
-            current_total = new_total;
-        } else {
-            println!(
-                "not a better solution, {} is not > {}",
-                new_total, current_total
-            );
+            let mut choices = valid_locations
+                .iter()
+                .map(|name| {
+                    let entry = map.entries.iter().find(|e| e.name == **name).unwrap();
+                    let distance = map
+                        .distance_between(&current_location, name)
+                        .unwrap()
+                        .unwrap();
+                    let weight = entry.rate as f64 / (distance as f64).powf(2f64);
+                    (name.clone(), weight)
+                })
+                .collect::<Vec<_>>();
+            choices.sort_by(|(_, a), (_, b)| a.total_cmp(&b));
+            println!("possible next = {:?}", choices);
+            let (next, _) = choices.pop().unwrap();
+            println!("next = {}", next);
+            valid_locations.remove(&next);
+            current_location = next.clone();
+            path.push(next);
         }
-        println!("");
-    }
-    println!("solution = {:?}", current_solution);
-    Ok(current_total)
+        println!("path = {:?}", path);
+        path
+    };
+
+    let result = map.value_for_route(first.clone(), &solution_path)?;
+    println!("result = {}", result);
+    Ok(result)
 }
 
 #[cfg(test)]
